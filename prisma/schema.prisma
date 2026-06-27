@@ -1,0 +1,182 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Resource {
+  id               String      @id @default(uuid())
+  type             String      // "FILE", "URL", "NOTE"
+  title            String
+  authors          String?     // JSON string of authors
+  source           String?
+  url              String?
+  description      String?
+  contentPreview   String?
+  fullText         String?     // 提取后的全文内容
+  metadata         String?     // JSON string for structured metadata (title, authors, abstract, journal, year, doi, etc.)
+  userEditedFields String?     // JSON string of fields edited by user
+  
+  // Embedding slot (reserved for future semantic search/RAG)
+  embeddingStatus  String   @default("NOT_GENERATED") // NOT_GENERATED, GENERATED, FAILED
+  embeddingVersion String?  // e.g. "v1"
+  embeddedAt       DateTime? // Timestamp when embedding was last generated
+  
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  deletedAt        DateTime?
+
+  // Relations
+  fileAsset        FileAsset?
+  urlMetadata      UrlMetadata?
+  note             Note?
+  content          ResourceContent?
+  metadataStructured ResourceMetadata?
+  collections      CollectionResource[]
+  tags             ResourceTag[]
+}
+
+model ResourceContent {
+  id            String   @id @default(uuid())
+  resourceId    String   @unique
+  resource      Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  extractedText String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ResourceMetadata {
+  id              String   @id @default(uuid())
+  resourceId      String   @unique
+  resource        Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  abstract        String?
+  keywords        String?
+  journal         String?
+  conference      String?
+  publisher       String?
+  publicationYear Int?
+  doi             String?
+  isbn            String?
+  arxivId         String?
+  pmid            String?
+  canonicalUrl    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model FileAsset {
+  id                 String   @id @default(uuid())
+  resourceId         String   @unique
+  resource           Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  originalFileName   String
+  storedFileName     String
+  relativePath       String
+  mimeType           String
+  extension          String
+  fileSize           Int
+  checksum           String?
+  extractedTextPath  String?
+  extractionStatus   String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  extractionError    String?
+}
+
+model UrlMetadata {
+  id               String   @id @default(uuid())
+  resourceId       String   @unique
+  resource         Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  originalUrl      String
+  normalizedUrl    String
+  canonicalUrl     String?
+  siteName         String?
+  fetchedTitle     String?
+  fetchedDescription String?
+  ogTitle          String?
+  ogDescription    String?
+  fetchedAt        DateTime @default(now())
+  fetchStatus      String   @default("PENDING")
+  fetchErrorType   String?
+}
+
+model Note {
+  id          String   @id @default(uuid())
+  resourceId  String   @unique
+  resource    Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  body        String
+  bodyFormat  String   @default("MARKDOWN")
+  wordCount   Int      @default(0)
+}
+
+model Collection {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  resources   CollectionResource[]
+}
+
+model CollectionResource {
+  id           String     @id @default(uuid())
+  collectionId String
+  resourceId   String
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  resource     Resource   @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  addedAt      DateTime   @default(now())
+  sortOrder    Int        @default(0)
+
+  @@unique([collectionId, resourceId])
+}
+
+model Tag {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  normalizedName String   @unique
+  color          String?
+  sourceType     String   @default("AUTO") // AUTO, MANUAL, MIXED
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  deletedAt      DateTime?
+
+  resources      ResourceTag[]
+}
+
+model ResourceTag {
+  id               String   @id @default(uuid())
+  resourceId       String
+  tagId            String
+  resource         Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  tag              Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  source           String   @default("MANUAL") // title, author, abstract, manual, etc.
+  confidence       Float?
+  createdAt        DateTime @default(now())
+  removedByUserAt  DateTime?
+
+  @@unique([resourceId, tagId])
+}
+
+model TagGenerationRule {
+  id                 String   @id @default(uuid())
+  tagName            String
+  normalizedTagName  String
+  matchType          String   // KEYWORD, REGEX
+  matchFields        String   // JSON array: title, description, content
+  keywords           String   // JSON array
+  enabled            Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AppSetting {
+  key       String   @id
+  value     String   // JSON string
+  updatedAt DateTime @updatedAt
+}
